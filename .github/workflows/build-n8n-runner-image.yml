@@ -1,34 +1,60 @@
-name: Build and Export n8n Runner Image
+name: Build and Push n8n Runner
 
 on:
   push:
     branches: [ "main" ]
-  workflow_dispatch: # 支持手动触发
+  workflow_dispatch: # 支持手动点击按钮触发
+
+# 必须声明权限，否则无法推送镜像到 GitHub Packages (GHCR)
+permissions:
+  packages: write
+  contents: read
 
 jobs:
-  build:
+  build-and-push:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # 1. 提取 Dockerfile 中的基础镜像版本号
+      # 逻辑：寻找 FROM 行，按冒号切割获取版本（如 1.76.1）
+      - name: Get Base Image Version
+        id: base_info
+        run: |
+          # 提取版本号，如果 Dockerfile 是 FROM n8nio/runners:1.70.0，则提取出 1.70.0
+          VERSION=$(grep '^FROM' Dockerfile | cut -d ':' -f 2 | tr -d ' \r\n')
+          echo "Detected Version: $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      # 2. 设置 QEMU (跨架构构建必选，用于模拟 arm64 环境)
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      # 3. 设置 Docker Buildx (多架构构建的核心引擎)
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build Docker image
-        run: |
-          # 构建镜像并打上标签
-          docker build -t n8n-custom-runner:latest .
-
-      - name: Save and Compress Image
-        run: |
-          # 保存并直接压缩，减小文件体积
-          docker save n8n-custom-runner:latest | gzip > n8n-custom-runner.tar.gz
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+      # 4. 登录到 GitHub Container Registry
+      - name: Login to GHCR
+        uses: docker/login-action@v3
         with:
-          name: n8n-runner-package
-          path: n8n-custom-runner.tar.gz
-          retention-days: 7 # 在 GitHub 上保留 7 天
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 5. 构建并推送多架构镜像
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          # 同时构建两个平台的镜像
+          platforms: linux/amd64,linux/arm64
+          push: true
+          # 定义镜像标签：一个是 latest，一个是跟随基础镜像的版本号
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/n8n-runners-with-external:latest
+            ghcr.io/${{ github.repository_owner }}/n8n-runners-with-external:${{ steps.base_info.outputs.version }}
+          # 使用 GitHub Actions 缓存，显著提升 pandas/numpy 等重型依赖的二次构建速度
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
