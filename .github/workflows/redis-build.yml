@@ -1,0 +1,52 @@
+name: Build Redis Static Binaries
+
+on:
+  workflow_dispatch:
+    inputs:
+      redis_version:
+        description: 'Redis version to build'
+        required: true
+        default: '7.2.4'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Build Redis
+        run: |
+          # 运行具有交叉编译能力的容器进行构建
+          docker run --rm -v ${{ github.workspace }}:/dist \
+            --platform linux/${{ matrix.arch }} \
+            debian:bookworm-slim /bin/bash -c "
+              apt-get update && apt-get install -y build-essential curl pkg-config
+              curl -L http://download.redis.io/releases/redis-${{ github.event.inputs.redis_version }}.tar.gz -o redis.tar.gz
+              tar xzf redis.tar.gz
+              cd redis-${{ github.event.inputs.redis_version }}
+              
+              # 关键步骤：使用 MALLOC=libc 并强制静态链接
+              # 这可以确保二进制文件不依赖特定版本的 jemalloc 或动态库
+              make LDFLAGS='-static' MALLOC=libc -j$(nproc)
+              
+              # 检查构建结果
+              ls -lh src/redis-server src/redis-cli
+              
+              # 拷贝到挂载目录
+              mkdir -p /dist/output/${{ matrix.arch }}
+              cp src/redis-server src/redis-cli /dist/output/${{ matrix.arch }}/
+            "
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: redis-${{ github.event.inputs.redis_version }}-${{ matrix.arch }}
+          path: output/${{ matrix.arch }}/
