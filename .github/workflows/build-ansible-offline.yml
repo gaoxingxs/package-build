@@ -1,50 +1,43 @@
-name: Download Ansible for CentOS 7 Offline
+name: Download Ansible for CentOS 7 (Glibc 2.17 Compatible)
 
 on:
-  workflow_dispatch: # 手动触发执行
+  workflow_dispatch: # 支持手动点击按钮触发
 
 jobs:
-  build:
+  build-and-package:
     runs-on: ubuntu-latest
-    container:
-      image: centos:7 # 核心：使用与目标环境一致的镜像
-
+    
     steps:
-      - name: Fix CentOS 7 Repos and Prepare Tools
+      # 第一步：在 Ubuntu 宿主机上启动 CentOS 7 容器进行下载
+      - name: Run Download in CentOS 7 Container
         run: |
-          # 1. 修复官方 Base 源：将 mirrorlist 注释掉，并将 baseurl 指向 vault.centos.org
-          sed -i s/mirror.centos.org/vault.centos.org/g /etc/yum.repos.d/CentOS-*.repo
-          sed -i s/^#.*baseurl=http/baseurl=http/g /etc/yum.repos.d/CentOS-*.repo
-          sed -i s/^mirrorlist=http/#mirrorlist=http/g /etc/yum.repos.d/CentOS-*.repo
-          
-          # 2. 安装 EPEL 源（Ansible 在这里）
-          yum install -y epel-release
-          
-          # 3. 同样修复 EPEL 源：EPEL 的旧版本也会被移到 archive 中
-          # 如果安装 epel 后 yum 依然报错，执行下面的替换（可选）
-          sed -i 's|^metalink=|#metalink=|g' /etc/yum.repos.d/epel.repo
-          sed -i 's|^#baseurl=https\?://download.fedoraproject.org/pub/epel/|baseurl=https://archives.fedoraproject.org/pub/archive/epel/|g' /etc/yum.repos.d/epel.repo
+          docker run --name centos_builder -v ${{ github.workspace }}:/output centos:7 sh -c "
+            # 1. 修复 CentOS 7 官方源 (指向 Vault 存档站)
+            sed -i 's/mirror.centos.org/vault.centos.org/g' /etc/yum.repos.d/CentOS-*.repo && \
+            sed -i 's/^#.*baseurl=http/baseurl=http/g' /etc/yum.repos.d/CentOS-*.repo && \
+            sed -i 's/^mirrorlist=http/#mirrorlist=http/g' /etc/yum.repos.d/CentOS-*.repo && \
+            
+            # 2. 安装 EPEL 并修复 EPEL 源 (Ansible 在这里)
+            yum install -y epel-release && \
+            sed -i 's|^metalink=|#metalink=|g' /etc/yum.repos.d/epel.repo && \
+            sed -i 's|^#baseurl=https\?://download.fedoraproject.org/pub/epel/|baseurl=https://archives.fedoraproject.org/pub/archive/epel/|g' /etc/yum.repos.d/epel.repo && \
+            
+            # 3. 安装下载工具
+            yum install -y yum-utils && \
+            mkdir -p /tmp/ansible-packages && \
+            
+            # 4. 下载 Ansible 及其所有依赖，包括 sshpass (常用插件)
+            # --resolve 会自动解析依赖树
+            yumdownloader --resolve --destdir=/tmp/ansible-packages ansible sshpass && \
+            
+            # 5. 打包并将产物移动到挂载的宿主机目录
+            tar -czvf /output/ansible-centos7-offline.tar.gz -C /tmp ansible-packages
+          "
 
-          # 4. 清理并重新建立缓存
-          yum clean all
-          yum makecache
-
-          # 5. 安装下载工具
-          yum install -y yum-utils
-          mkdir -p /opt/ansible-offline
-
-      - name: Download Ansible and Dependencies
-        run: |
-          # 仅下载依赖，不安装
-          # --resolve 解决依赖，--destdir 指定存放目录
-          yumdownloader --resolve --destdir=/opt/ansible-offline ansible
-
-      - name: Tar Files
-        run: |
-          tar -czvf ansible-centos7-offline.tar.gz -C /opt ansible-offline
-
-      - name: Upload Artifact
+      # 第二步：由 Ubuntu 宿主机上传产物 (绕过 Glibc 限制)
+      - name: Upload Offline Package
         uses: actions/upload-artifact@v4
         with:
-          name: ansible-offline-package
+          name: ansible-offline-bundle
           path: ansible-centos7-offline.tar.gz
+          retention-days: 5
