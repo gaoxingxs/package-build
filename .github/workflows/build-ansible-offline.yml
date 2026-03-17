@@ -1,35 +1,44 @@
 name: Download Ansible for CentOS 7 Offline
 
 on:
-  workflow_dispatch: # 手动触发执行
+  workflow_dispatch: # 允许手动触发
 
 jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: centos:7 # 核心：使用与目标环境一致的镜像
+      image: centos:7
+      options: --user root
 
     steps:
-      - name: Prepare Repository and Tools
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies in CentOS 7
         run: |
-          # 安装 epel 源以获取 ansible
+          # 安装 EPEL 源 (包含 python36-pip)
           yum install -y epel-release
-          # 安装下载工具
-          yum install -y yum-utils
-          mkdir /opt/ansible-offline
+          # 安装 Python 3.6 和 pip
+          yum install -y python36 python36-pip yum-utils
+          # 升级 pip 以确保能识别正确的 manylinux 标签
+          pip3 install --upgrade pip setuptools wheel
 
       - name: Download Ansible and Dependencies
         run: |
-          # 仅下载依赖，不安装
-          # --resolve 解决依赖，--destdir 指定存放目录
-          yumdownloader --resolve --destdir=/opt/ansible-offline ansible
-
-      - name: Tar Files
-        run: |
-          tar -czvf ansible-centos7-offline.tar.gz -C /opt ansible-offline
+          # 创建下载目录
+          mkdir -p /workspace/ansible_offline
+          cd /workspace/ansible_offline
+          
+          # 下载 Ansible 2.10.7 (最后一个支持 Python 3.6 且包含所有集合的版本，适合 CentOS 7)
+          # 如果需更新版本，可改为 ansible-core==2.11.12，但 2.10.7 离线安装更简单
+          pip3 download ansible==2.10.7 -d ./wheels
+          
+          # 打包
+          tar -czvf ansible_centos7_offline.tar.gz ./wheels
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ansible-offline-package
-          path: ansible-centos7-offline.tar.gz
+          name: ansible-centos7-offline-package
+          path: /workspace/ansible_offline/ansible_centos7_offline.tar.gz
+          retention-days: 90
