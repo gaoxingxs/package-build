@@ -1,7 +1,7 @@
 name: build-ansible-offline
 
 on:
-
+  workflow_dispatch:
 jobs:
   build:
     runs-on: ubuntu-latest
