@@ -1,0 +1,57 @@
+name: Build llama.cpp for CentOS 7
+
+on:
+  workflow_dispatch: # 手动触发
+
+jobs:
+  build-centos7:
+    runs-on: ubuntu-latest
+    container:
+      image: quay.io/pypa/manylinux2014_x86_64 # 基于 CentOS 7, glibc 2.17
+    
+    steps:
+      - name: Install dependencies
+        run: |
+          # 安装 devtoolset-11 (GCC 11) 和必要的工具
+          yum install -y devtoolset-11-gcc devtoolset-11-gcc-c++ devtoolset-11-binutils git wget
+          # manylinux 默认有 cmake，但我们需要确保它是较新版本
+          pip3 install cmake --upgrade
+
+      - name: Checkout llama.cpp
+        uses: actions/checkout@v4
+        with:
+          repository: ggerganov/llama.cpp
+          fetch-depth: 0
+
+      - name: Build
+        run: |
+          # 启用 devtoolset-11 环境
+          source /opt/rh/devtoolset-11/enable
+          
+          mkdir build
+          cd build
+          
+          # 配置 CMake
+          # -static-libgcc -static-libstdc++ 确保不依赖系统的旧版 libstdc++
+          # 针对你的 Xeon 4214，开启 AVX512 优化
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DGGML_AVX512=ON \
+            -DCMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++" \
+            -DCMAKE_SKIP_RPATH=ON
+          
+          # 编译
+          cmake --build . --config Release -j $(nproc)
+
+      - name: Package Binaries
+        run: |
+          mkdir -p release_bin
+          cp build/bin/llama-cli release_bin/
+          cp build/bin/llama-server release_bin/
+          tar -czvf llama-cpp-centos7-avx512.tar.gz release_bin/
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: llama-cpp-centos7-binary
+          path: llama-cpp-centos7-avx512.tar.gz
