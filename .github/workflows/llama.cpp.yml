@@ -30,6 +30,8 @@ jobs:
             cmake .. \
               -DCMAKE_BUILD_TYPE=Release \
               -DGGML_AVX512=ON \
+              -DBUILD_SHARED_LIBS=OFF \
+              -DGGML_STATIC=ON \
               -DCMAKE_EXE_LINKER_FLAGS='-static-libgcc -static-libstdc++' \
               -DCMAKE_SKIP_RPATH=ON
             make -j$(nproc) llama-cli llama-server llama-quantize
