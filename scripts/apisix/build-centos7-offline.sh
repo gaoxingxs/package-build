@@ -17,6 +17,7 @@ BUILD_DEPENDENCIES=(
   epel-release
   centos-release-scl
   yum-utils
+  sudo
   devtoolset-9
   gcc
   gcc-c++
