@@ -96,6 +96,10 @@ install_build_dependencies() {
   log "Installing build dependencies"
   yum install -y "${BUILD_DEPENDENCIES[@]}"
 
+  # centos-release-scl adds new repo files after the initial rewrite pass.
+  # Rewrite them again so any later yum invocation from APISIX tooling also uses Vault.
+  reset_centos7_repos
+
   # shellcheck disable=SC1091
   if [[ -f /opt/rh/devtoolset-9/enable ]]; then
     source /opt/rh/devtoolset-9/enable
