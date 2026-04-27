@@ -61,7 +61,7 @@ readonly WORK_ROOT
 readonly SOURCE_URL_BASE
 
 log() {
-  printf '[apisix-build] %s\n' "$*"
+  printf '[apisix-build] %s\n' "$*" >&2
 }
 
 fail_with_log() {
@@ -158,13 +158,19 @@ install_luarocks_from_source() {
 
 download_apisix_source() {
   local archive="${WORK_ROOT}/apisix-${APISIX_VERSION}.tar.gz"
-  local source_dir="${WORK_ROOT}/apisix-${APISIX_VERSION}"
+  local extracted_root
 
   log "Downloading APISIX source ${APISIX_VERSION}"
   curl -fsSL "${SOURCE_URL_BASE}/${APISIX_VERSION}.tar.gz" -o "${archive}"
   tar -xzf "${archive}" -C "${WORK_ROOT}"
-  mv "${WORK_ROOT}/apisix-${APISIX_VERSION}" "${source_dir}"
-  printf '%s\n' "${source_dir}"
+
+  extracted_root="$(tar -tzf "${archive}" | head -n1 | cut -d/ -f1)"
+  if [[ -z "${extracted_root}" || ! -d "${WORK_ROOT}/${extracted_root}" ]]; then
+    echo "Failed to determine extracted APISIX source directory" >&2
+    exit 1
+  fi
+
+  printf '%s\n' "${WORK_ROOT}/${extracted_root}"
 }
 
 build_apisix() {
