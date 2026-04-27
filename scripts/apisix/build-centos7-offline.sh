@@ -86,7 +86,11 @@ install_build_dependencies() {
   yum install -y "${BUILD_DEPENDENCIES[@]}"
 
   # shellcheck disable=SC1091
-  source /opt/rh/devtoolset-9/enable
+  if [[ -f /opt/rh/devtoolset-9/enable ]]; then
+    source /opt/rh/devtoolset-9/enable
+  else
+    gcc --version || true
+  fi
 }
 
 write_build_dependency_manifest() {
