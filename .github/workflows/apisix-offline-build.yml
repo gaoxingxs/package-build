@@ -80,7 +80,7 @@ jobs:
           OPENRESTY_VERSION: ${{ github.event.inputs.openresty_version }}
           LUAROCKS_VERSION: ${{ github.event.inputs.luarocks_version }}
           RPM_RELEASE: ${{ github.event.inputs.rpm_release }}
-          TARGET_ARCH: ${{ matrix.arch }}
+          PACKAGE_ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
 
