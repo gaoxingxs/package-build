@@ -75,9 +75,19 @@ fail_with_log() {
 
 reset_centos7_repos() {
   log "Switching CentOS 7 repositories to Vault"
-  sed -i 's/mirror.centos.org/vault.centos.org/g' /etc/yum.repos.d/CentOS-*.repo
-  sed -i 's/^#.*baseurl=http/baseurl=http/g' /etc/yum.repos.d/CentOS-*.repo
-  sed -i 's/^mirrorlist=http/#mirrorlist=http/g' /etc/yum.repos.d/CentOS-*.repo
+
+  if compgen -G '/etc/yum.repos.d/CentOS-*.repo' >/dev/null; then
+    sed -i 's/mirror.centos.org/vault.centos.org/g' /etc/yum.repos.d/CentOS-*.repo
+    sed -i 's/^#.*baseurl=http/baseurl=http/g' /etc/yum.repos.d/CentOS-*.repo
+    sed -i 's/^mirrorlist=http/#mirrorlist=http/g' /etc/yum.repos.d/CentOS-*.repo
+  fi
+
+  if compgen -G '/etc/yum.repos.d/CentOS-SCLo-*.repo' >/dev/null; then
+    sed -i 's/mirror.centos.org/vault.centos.org/g' /etc/yum.repos.d/CentOS-SCLo-*.repo
+    sed -i 's/^#.*baseurl=http/baseurl=http/g' /etc/yum.repos.d/CentOS-SCLo-*.repo
+    sed -i 's/^mirrorlist=http/#mirrorlist=http/g' /etc/yum.repos.d/CentOS-SCLo-*.repo
+  fi
+
   yum clean all
   yum makecache
 }
