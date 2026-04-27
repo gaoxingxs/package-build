@@ -83,6 +83,7 @@ jobs:
           PACKAGE_ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
+          TARGET_ARCH="${PACKAGE_ARCH}"
 
           case "${TARGET_ARCH}" in
             amd64)
@@ -109,7 +110,7 @@ jobs:
             -e OPENRESTY_VERSION="${OPENRESTY_VERSION}" \
             -e LUAROCKS_VERSION="${LUAROCKS_VERSION}" \
             -e RPM_RELEASE="${RPM_RELEASE}" \
-            -e TARGET_ARCH="${TARGET_ARCH}" \
+            -e PACKAGE_ARCH="${PACKAGE_ARCH}" \
             -e RPM_ARCH="${RPM_ARCH}" \
             -e OUTPUT_DIR="/work/output/apisix/${TARGET_ARCH}" \
             -v "${GITHUB_WORKSPACE}:/work" \
