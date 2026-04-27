@@ -1,0 +1,36 @@
+{
+  "id": "04-27-apisix-offline-build",
+  "name": "Build APISIX offline packages via GitHub Actions",
+  "description": "Add a GitHub Actions workflow that compiles APISIX from source and produces offline-installable artifacts for CentOS 7 on amd64 and arm64.",
+  "status": "in_progress",
+  "dev_type": "backend",
+  "priority": "P1",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-04-27",
+  "completedAt": null,
+  "commit": null,
+  "subtasks": [
+    {
+      "name": "Add build workflow",
+      "status": "completed"
+    },
+    {
+      "name": "Add CentOS 7 packaging script",
+      "status": "completed"
+    },
+    {
+      "name": "Document offline install process",
+      "status": "completed"
+    }
+  ],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    ".github/workflows/apisix-offline-build.yml",
+    "scripts/apisix/build-centos7-offline.sh",
+    "docs/apisix-offline-build.md"
+  ],
+  "notes": "Task created manually because the local Trellis python entrypoints were not directly executable in the current Windows shell environment.",
+  "meta": {}
+}

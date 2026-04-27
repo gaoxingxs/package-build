@@ -1,0 +1,124 @@
+name: Build APISIX Offline Packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      apisix_version:
+        description: "APISIX tag to build"
+        required: true
+        default: "3.13.0"
+      target_arch:
+        description: "Target architecture"
+        required: true
+        default: "amd64"
+        type: choice
+        options:
+          - amd64
+          - arm64
+          - both
+      openresty_version:
+        description: "OpenResty version compiled into the package"
+        required: true
+        default: "1.21.4.3"
+      luarocks_version:
+        description: "LuaRocks version used during build"
+        required: true
+        default: "3.11.1"
+      rpm_release:
+        description: "RPM release field"
+        required: true
+        default: "1"
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - id: set-matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${{ github.event.inputs.target_arch }}" in
+            amd64)
+              echo 'matrix={"arch":["amd64"]}' >> "$GITHUB_OUTPUT"
+              ;;
+            arm64)
+              echo 'matrix={"arch":["arm64"]}' >> "$GITHUB_OUTPUT"
+              ;;
+            both)
+              echo 'matrix={"arch":["amd64","arm64"]}' >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "Unsupported target_arch: ${{ github.event.inputs.target_arch }}" >&2
+              exit 1
+              ;;
+          esac
+
+  build:
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        if: matrix.arch == 'arm64'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Build offline package
+        shell: bash
+        env:
+          APISIX_VERSION: ${{ github.event.inputs.apisix_version }}
+          OPENRESTY_VERSION: ${{ github.event.inputs.openresty_version }}
+          LUAROCKS_VERSION: ${{ github.event.inputs.luarocks_version }}
+          RPM_RELEASE: ${{ github.event.inputs.rpm_release }}
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+
+          case "${TARGET_ARCH}" in
+            amd64)
+              DOCKER_PLATFORM="linux/amd64"
+              DOCKER_IMAGE="centos:7"
+              RPM_ARCH="x86_64"
+              ;;
+            arm64)
+              DOCKER_PLATFORM="linux/arm64"
+              DOCKER_IMAGE="arm64v8/centos:7"
+              RPM_ARCH="aarch64"
+              ;;
+            *)
+              echo "Unsupported TARGET_ARCH: ${TARGET_ARCH}" >&2
+              exit 1
+              ;;
+          esac
+
+          mkdir -p "output/apisix/${TARGET_ARCH}"
+
+          docker run --rm \
+            --platform "${DOCKER_PLATFORM}" \
+            -e APISIX_VERSION="${APISIX_VERSION}" \
+            -e OPENRESTY_VERSION="${OPENRESTY_VERSION}" \
+            -e LUAROCKS_VERSION="${LUAROCKS_VERSION}" \
+            -e RPM_RELEASE="${RPM_RELEASE}" \
+            -e TARGET_ARCH="${TARGET_ARCH}" \
+            -e RPM_ARCH="${RPM_ARCH}" \
+            -e OUTPUT_DIR="/work/output/apisix/${TARGET_ARCH}" \
+            -v "${GITHUB_WORKSPACE}:/work" \
+            "${DOCKER_IMAGE}" \
+            bash /work/scripts/apisix/build-centos7-offline.sh
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: apisix-${{ github.event.inputs.apisix_version }}-el7-${{ matrix.arch }}
+          path: output/apisix/${{ matrix.arch }}/
+          retention-days: 7
