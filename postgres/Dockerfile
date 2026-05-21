@@ -17,12 +17,27 @@ RUN set -eux; \
     yum makecache fast
 
 # ---------- 2. 安装 SCL 源 + devtoolset-11（GCC 11）+ 构建依赖 ----------
+# centos-release-scl 装的 SCLo 仓库默认指向 mirrorlist.centos.org（已下线），
+# 这里直接用 printf 覆写为 vault 直链，避免 sed 匹配脆弱的问题。
+# $basearch 用单引号保护，留给 yum 在运行时展开。
 RUN set -eux; \
-    yum install -y centos-release-scl epel-release; \
-    # SCL/EPEL 源也要切到 vault
-    sed -i 's|^mirrorlist=|#mirrorlist=|g'                       /etc/yum.repos.d/CentOS-SCLo-*.repo || true; \
-    sed -i 's|^#\?baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-SCLo-*.repo || true; \
+    yum install -y centos-release-scl; \
+    printf '%s\n' \
+      '[centos-sclo-sclo]' \
+      'name=CentOS-7 - SCLo sclo (vault)' \
+      'baseurl=https://vault.centos.org/centos/7/sclo/$basearch/sclo/' \
+      'gpgcheck=0' \
+      'enabled=1' \
+      > /etc/yum.repos.d/CentOS-SCLo-scl.repo; \
+    printf '%s\n' \
+      '[centos-sclo-rh]' \
+      'name=CentOS-7 - SCLo rh (vault)' \
+      'baseurl=https://vault.centos.org/centos/7/sclo/$basearch/rh/' \
+      'gpgcheck=0' \
+      'enabled=1' \
+      > /etc/yum.repos.d/CentOS-SCLo-scl-rh.repo; \
     yum clean all; \
+    yum makecache fast; \
     yum install -y \
         devtoolset-11-gcc \
         devtoolset-11-gcc-c++ \
