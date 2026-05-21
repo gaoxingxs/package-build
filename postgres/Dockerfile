@@ -19,20 +19,29 @@ RUN set -eux; \
 # ---------- 2. 安装 SCL 源 + devtoolset-11（GCC 11）+ 构建依赖 ----------
 # centos-release-scl 装的 SCLo 仓库默认指向 mirrorlist.centos.org（已下线），
 # 这里直接用 printf 覆写为 vault 直链，避免 sed 匹配脆弱的问题。
-# $basearch 用单引号保护，留给 yum 在运行时展开。
+#
+# 路径分发：
+#   x86_64  → vault.centos.org/centos/7/sclo/x86_64/...
+#   aarch64 → vault.centos.org/altarch/7/sclo/aarch64/...   ← non-x86 在 altarch 树下
 RUN set -eux; \
     yum install -y centos-release-scl; \
+    ARCH="$(uname -m)"; \
+    if [ "$ARCH" = "x86_64" ]; then \
+      SCLO_BASE="https://vault.centos.org/centos/7/sclo/${ARCH}"; \
+    else \
+      SCLO_BASE="https://vault.centos.org/altarch/7/sclo/${ARCH}"; \
+    fi; \
     printf '%s\n' \
       '[centos-sclo-sclo]' \
       'name=CentOS-7 - SCLo sclo (vault)' \
-      'baseurl=https://vault.centos.org/centos/7/sclo/$basearch/sclo/' \
+      "baseurl=${SCLO_BASE}/sclo/" \
       'gpgcheck=0' \
       'enabled=1' \
       > /etc/yum.repos.d/CentOS-SCLo-scl.repo; \
     printf '%s\n' \
       '[centos-sclo-rh]' \
       'name=CentOS-7 - SCLo rh (vault)' \
-      'baseurl=https://vault.centos.org/centos/7/sclo/$basearch/rh/' \
+      "baseurl=${SCLO_BASE}/rh/" \
       'gpgcheck=0' \
       'enabled=1' \
       > /etc/yum.repos.d/CentOS-SCLo-scl-rh.repo; \
