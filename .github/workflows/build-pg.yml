@@ -1,0 +1,328 @@
+name: Build PostgreSQL with Extensions
+
+on:
+  workflow_dispatch:
+    inputs:
+      pg_version:
+        description: 'PostgreSQL version'
+        required: false
+        default: '17.5'
+
+env:
+  PG_VERSION: ${{ github.event.inputs.pg_version || '17.5' }}
+  PG_MAJOR: '17'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      # 在 CentOS 7 上构建，glibc 2.17 兼容几乎所有 Linux 发行版
+      image: centos:7
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          # CentOS 7 已 EOL，需要切换到 vault 镜像源
+          sed -i 's|^mirrorlist=|#mirrorlist=|g' /etc/yum.repos.d/CentOS-*.repo
+          sed -i 's|^#baseurl=http://mirror.centos.org|baseurl=https://vault.centos.org|g' /etc/yum.repos.d/CentOS-*.repo
+
+          yum install -y centos-release-scl
+          sed -i 's|^mirrorlist=|#mirrorlist=|g' /etc/yum.repos.d/CentOS-SCL-*.repo
+          sed -i 's|^#baseurl=http://mirror.centos.org|baseurl=https://vault.centos.org|g' /etc/yum.repos.d/CentOS-SCL-*.repo
+
+          # 安装编译工具链 (devtoolset-11 提供 GCC 11，支持 C++17)
+          yum install -y \
+            devtoolset-11 \
+            bison flex make wget git curl ca-certificates \
+            readline-devel zlib-devel libedit-devel \
+            libxml2-devel libxslt-devel openssl-devel \
+            libicu-devel lz4-devel libzstd-devel \
+            openldap-devel krb5-devel \
+            perl-IPC-run perl-devel python-devel tcl-devel \
+            cmake3 ninja-build pkgconfig \
+            libcurl-devel
+
+          # cmake3 安装为 cmake3 而非 cmake，创建符号链接
+          ln -sf /usr/bin/cmake3 /usr/bin/cmake 2>/dev/null || true
+
+      - name: Build static dependencies
+        run: |
+          # 启用 devtoolset-11 (GCC 11)
+          source /opt/rh/devtoolset-11/enable
+
+          export STATIC_SRC=/tmp/static-src
+          export STATIC_PREFIX=/usr/local/static
+          mkdir -p $STATIC_SRC $STATIC_PREFIX
+
+          # ---------- 构建 OpenSSL 静态库 (1.1.1，CentOS 7 自带的太旧) ----------
+          cd $STATIC_SRC
+          wget -q https://www.openssl.org/source/openssl-1.1.1w.tar.gz
+          tar xzf openssl-1.1.1w.tar.gz
+          cd openssl-1.1.1w
+          ./config --prefix=$STATIC_PREFIX --openssldir=$STATIC_PREFIX/ssl \
+            no-shared threads zlib
+          make -j$(nproc)
+          make install_sw
+
+          # ---------- 构建 readline 静态库 ----------
+          cd $STATIC_SRC
+          wget -q https://ftp.gnu.org/gnu/readline/readline-8.2.tar.gz
+          tar xzf readline-8.2.tar.gz
+          cd readline-8.2
+          ./configure --prefix=$STATIC_PREFIX --enable-static --disable-shared
+          make -j$(nproc)
+          make install
+
+          # ---------- 构建 zlib 静态库 ----------
+          cd $STATIC_SRC
+          wget -q https://zlib.net/zlib-1.3.1.tar.gz
+          tar xzf zlib-1.3.1.tar.gz
+          cd zlib-1.3.1
+          ./configure --prefix=$STATIC_PREFIX --static
+          make -j$(nproc)
+          make install
+
+          # ---------- 构建 lz4 静态库 ----------
+          cd $STATIC_SRC
+          wget -q https://github.com/lz4/lz4/releases/download/v1.9.4/lz4-1.9.4.tar.gz
+          tar xzf lz4-1.9.4.tar.gz
+          cd lz4-1.9.4
+          make -j$(nproc) PREFIX=$STATIC_PREFIX install
+
+          # ---------- 构建 zstd 静态库 ----------
+          cd $STATIC_SRC
+          wget -q https://github.com/facebook/zstd/releases/download/v1.5.6/zstd-1.5.6.tar.gz
+          tar xzf zstd-1.5.6.tar.gz
+          cd zstd-1.5.6
+          make -j$(nproc) PREFIX=$STATIC_PREFIX install-static install-includes
+
+          # ---------- 构建 libxml2 静态库 ----------
+          cd $STATIC_SRC
+          wget -q https://download.gnome.org/sources/libxml2/2.12/libxml2-2.12.7.tar.xz
+          tar xJf libxml2-2.12.7.tar.xz
+          cd libxml2-2.12.7
+          ./configure --prefix=$STATIC_PREFIX --enable-static --disable-shared \
+            --without-python --without-readline --with-zlib=$STATIC_PREFIX
+          make -j$(nproc)
+          make install
+
+          # ---------- 构建 libxslt 静态库 ----------
+          cd $STATIC_SRC
+          wget -q https://download.gnome.org/sources/libxslt/1.1/libxslt-1.1.42.tar.xz
+          tar xJf libxslt-1.1.42.tar.xz
+          cd libxslt-1.1.42
+          ./configure --prefix=$STATIC_PREFIX --enable-static --disable-shared \
+            --without-python --without-crypto \
+            LIBXML_CFLAGS="-I$STATIC_PREFIX/include/libxml2" \
+            LIBXML_LIBS="-L$STATIC_PREFIX/lib -lxml2 -lz -llz4 -lm" \
+            XSLT_LIBXML_CONFIG=$STATIC_PREFIX/bin/xml2-config
+          make -j$(nproc)
+          make install
+
+          # ---------- 构建 ICU 静态库 ----------
+          cd $STATIC_SRC
+          wget -q https://github.com/unicode-org/icu/releases/download/release-72-1/icu4c-72_1-src.tar.xz
+          tar xJf icu4c-72_1-src.tar.xz
+          cd icu/source
+          ./configure --prefix=$STATIC_PREFIX --enable-static --disable-shared \
+            --with-data-pack=static
+          make -j$(nproc)
+          make install
+
+          echo "所有静态依赖构建完成"
+
+      - name: Build PostgreSQL from source
+        run: |
+          source /opt/rh/devtoolset-11/enable
+
+          export STATIC_PREFIX=/usr/local/static
+          export PKG_CONFIG_PATH=$STATIC_PREFIX/lib/pkgconfig:$STATIC_PREFIX/share/pkgconfig
+          export CFLAGS="-I$STATIC_PREFIX/include -I$STATIC_PREFIX/include/libxml2"
+          export CPPFLAGS="-I$STATIC_PREFIX/include -I$STATIC_PREFIX/include/libxml2"
+          export LDFLAGS="-L$STATIC_PREFIX/lib -L$STATIC_PREFIX/lib64"
+          export LD_LIBRARY_PATH="$STATIC_PREFIX/lib:$STATIC_PREFIX/lib64"
+
+          wget -O postgresql.tar.bz2 "https://ftp.postgresql.org/pub/source/v${PG_VERSION}/postgresql-${PG_VERSION}.tar.bz2"
+          mkdir -p /usr/src/postgresql
+          tar --extract --file postgresql.tar.bz2 --directory /usr/src/postgresql --strip-components 1
+          rm postgresql.tar.bz2
+
+          cd /usr/src/postgresql
+
+          # 修改默认 socket 目录
+          awk '$1 == "#define" && $2 == "DEFAULT_PGSOCKET_DIR" && $3 == "\"/tmp\"" { $3 = "\"/var/run/postgresql\""; print; next } { print }' \
+            src/include/pg_config_manual.h > src/include/pg_config_manual.h.new
+          mv src/include/pg_config_manual.h.new src/include/pg_config_manual.h
+
+          # 优先使用静态库链接，减少对系统动态库的依赖
+          ./configure \
+            --enable-integer-datetimes \
+            --disable-rpath \
+            --with-uuid=e2fs \
+            --with-pgport=5432 \
+            --with-system-tzdata=/usr/share/zoneinfo \
+            --prefix=/usr/local \
+            --with-includes="$STATIC_PREFIX/include $STATIC_PREFIX/include/libxml2" \
+            --with-libraries="$STATIC_PREFIX/lib $STATIC_PREFIX/lib64" \
+            --with-openssl \
+            --with-icu \
+            --with-libxml \
+            --with-libxslt \
+            --with-lz4 \
+            --with-zstd \
+            --without-llvm \
+            --without-gssapi \
+            --without-ldap \
+            --without-perl \
+            --without-python \
+            --without-tcl \
+            --without-pam
+
+          make -j$(nproc) world-bin
+          make install-world-bin
+          make -C contrib install
+
+          echo "PostgreSQL 构建完成: $(/usr/local/bin/postgres --version)"
+
+      - name: Build pgvector
+        run: |
+          source /opt/rh/devtoolset-11/enable
+
+          export STATIC_PREFIX=/usr/local/static
+          export CFLAGS="-I$STATIC_PREFIX/include"
+          export CPPFLAGS="-I$STATIC_PREFIX/include"
+          export LDFLAGS="-L$STATIC_PREFIX/lib"
+
+          cd /tmp
+          git clone --branch v0.8.2 https://github.com/pgvector/pgvector.git
+          cd pgvector
+          make OPTFLAGS="" USE_PGXS=1 -j$(nproc)
+          make install
+          echo "pgvector 构建完成"
+
+      - name: Build pg_cron
+        run: |
+          source /opt/rh/devtoolset-11/enable
+
+          cd /tmp
+          git clone https://github.com/citusdata/pg_cron.git
+          cd pg_cron
+          make USE_PGXS=1 -j$(nproc)
+          make install
+          echo "pg_cron 构建完成"
+
+      - name: Build pg_duckdb
+        run: |
+          source /opt/rh/devtoolset-11/enable
+
+          # 安装 DuckDB 构建所需的 libc++ 静态库
+          # devtoolset-11 提供了 libstdc++ 静态库
+          yum install -y libstdc++-static || true
+
+          cd /tmp
+          git clone https://github.com/duckdb/pg_duckdb.git
+          cd pg_duckdb
+          git submodule update --init --recursive
+
+          # 使用静态链接模式构建 DuckDB，将 DuckDB 引擎静态编译进扩展
+          DUCKDB_BUILD=ReleaseStatic make -j$(nproc)
+          make install
+          echo "pg_duckdb 构建完成"
+
+      - name: Analyze and package distribution
+        run: |
+          # 创建输出目录
+          mkdir -p /tmp/pg-dist
+
+          # 复制 PostgreSQL 安装目录
+          cp -a /usr/local /tmp/pg-dist/local
+
+          # 清理不需要的文件（保留 lib 下的 .so 和 .a，移除开发文件）
+          rm -rf /tmp/pg-dist/local/share/doc
+          rm -rf /tmp/pg-dist/local/share/man
+          rm -rf /tmp/pg-dist/local/include
+          rm -rf /tmp/pg-dist/local/lib/pkgconfig
+          # 移除静态库（运行时不需要，仅保留 .so）
+          find /tmp/pg-dist/local/lib -name "*.a" -not -name "*.so.*" -delete 2>/dev/null || true
+
+          # strip 所有二进制文件和库以减小体积
+          find /tmp/pg-dist/local/bin -type f -executable -exec strip --strip-unneeded {} \; 2>/dev/null || true
+          find /tmp/pg-dist/local/lib -type f -name "*.so*" -exec strip --strip-unneeded {} \; 2>/dev/null || true
+
+          # 生成扩展清单
+          cat > /tmp/pg-dist/local/EXTENSIONS.txt << 'HEADER'
+          === PostgreSQL 静态构建分发 ===
+          HEADER
+          echo "构建时间: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> /tmp/pg-dist/local/EXTENSIONS.txt
+          echo "PostgreSQL 版本: $(/tmp/pg-dist/local/bin/postgres --version)" >> /tmp/pg-dist/local/EXTENSIONS.txt
+          echo "构建平台: CentOS 7 (glibc 2.17 兼容)" >> /tmp/pg-dist/local/EXTENSIONS.txt
+          echo "" >> /tmp/pg-dist/local/EXTENSIONS.txt
+          echo "=== 已构建扩展列表 ===" >> /tmp/pg-dist/local/EXTENSIONS.txt
+
+          for ctrl in /tmp/pg-dist/local/share/postgresql/extension/*.control; do
+            if [ -f "$ctrl" ]; then
+              ext_name=$(basename "$ctrl" .control)
+              echo "  - $ext_name" >> /tmp/pg-dist/local/EXTENSIONS.txt
+            fi
+          done
+
+          # 分析动态库依赖
+          echo "" >> /tmp/pg-dist/local/EXTENSIONS.txt
+          echo "=== 动态库依赖分析 (postgres) ===" >> /tmp/pg-dist/local/EXTENSIONS.txt
+          ldd /tmp/pg-dist/local/bin/postgres >> /tmp/pg-dist/local/EXTENSIONS.txt 2>&1 || \
+            echo "(无法分析)" >> /tmp/pg-dist/local/EXTENSIONS.txt
+
+          echo "" >> /tmp/pg-dist/local/EXTENSIONS.txt
+          echo "=== 动态库依赖分析 (所有 .so) ===" >> /tmp/pg-dist/local/EXTENSIONS.txt
+          find /tmp/pg-dist/local/lib -name "*.so" -exec sh -c 'echo "--- {} ---"; ldd {} 2>&1' \; \
+            >> /tmp/pg-dist/local/EXTENSIONS.txt 2>&1 || true
+
+          # 打包为 tar.gz
+          cd /tmp/pg-dist
+          tar -czf /tmp/postgresql-${PG_VERSION}-glibc217-x86_64.tar.gz local/
+
+          # 显示包大小和依赖信息
+          ls -lh /tmp/postgresql-${PG_VERSION}-glibc217-x86_64.tar.gz
+          echo ""
+          cat /tmp/pg-dist/local/EXTENSIONS.txt
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: postgresql-${{ env.PG_VERSION }}-glibc217-x86_64
+          path: /tmp/postgresql-${{ env.PG_VERSION }}-glibc217-x86_64.tar.gz
+          retention-days: 90
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: /tmp/postgresql-${{ env.PG_VERSION }}-glibc217-x86_64.tar.gz
+          body: |
+            PostgreSQL ${{ env.PG_VERSION }} (CentOS 7 构建, glibc 2.17 兼容)
+
+            兼容: CentOS 7+, Ubuntu 18.04+, Debian 10+, Amazon Linux 2, RHEL 7+, SLES 12+ 等几乎所有 Linux 发行版
+
+            包含扩展: pg_cron, pg_duckdb, pgvector, postgres_fdw, pg_stat_statements, pg_trgm, hstore, btree_gin, btree_gist 等
+
+            使用方式:
+            ```bash
+            # 解压到 /usr/local
+            tar -xzf postgresql-${{ env.PG_VERSION }}-glibc217-x86_64.tar.gz -C / --strip-components=1
+
+            # 初始化数据库
+            /usr/local/bin/initdb -D /var/lib/pgsql/data
+
+            # 启动
+            /usr/local/bin/pg_ctl -D /var/lib/pgsql/data start
+
+            # 在 psql 中启用扩展
+            CREATE EXTENSION pg_cron;
+            CREATE EXTENSION pgvector;
+            CREATE EXTENSION pg_duckdb;  -- 需先在 postgresql.conf 设置 shared_preload_libraries='pg_cron,pg_duckdb'
+            ```
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
