@@ -1,4 +1,4 @@
-name: Build Offline Dependencies
+name: "[Python] Download/build offline wheels (multi-arch)"
 
 on:
   workflow_dispatch:

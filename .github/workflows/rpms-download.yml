@@ -1,4 +1,4 @@
-name: Download RPMs Offline
+name: "[RPMs] Download with dependencies (CentOS 7, multi-arch)"
 
 on:
   workflow_dispatch:

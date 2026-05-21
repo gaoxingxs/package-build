@@ -1,4 +1,4 @@
-name: Build and Push n8n Runner
+name: "[n8n] Build & push runner image (multi-arch GHCR)"
 
 on:
   # push:
@@ -22,8 +22,8 @@ jobs:
       - name: Get Base Image Version
         id: base_info
         run: |
-          # 提取版本号，如果 Dockerfile 是 FROM n8nio/runners:1.70.0，则提取出 1.70.0
-          VERSION=$(grep '^FROM' Dockerfile | cut -d ':' -f 2 | tr -d ' \r\n')
+          # 从 n8n/Dockerfile 提取版本号，如 FROM n8nio/runners:1.70.0 → 1.70.0
+          VERSION=$(grep '^FROM' n8n/Dockerfile | cut -d ':' -f 2 | tr -d ' \r\n')
           echo "Detected Version: $VERSION"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
@@ -47,7 +47,7 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
-          context: .
+          context: ./n8n
           # 同时构建两个平台的镜像
           platforms: linux/amd64,linux/arm64
           push: true

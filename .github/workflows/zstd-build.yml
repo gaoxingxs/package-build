@@ -1,4 +1,4 @@
-name: Build zstd Static
+name: "[zstd] Build static binary (multi-arch)"
 
 on:
   workflow_dispatch:

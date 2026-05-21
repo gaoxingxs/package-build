@@ -1,4 +1,4 @@
-name: Build APISIX Offline Packages
+name: "[APISIX] Build offline RPM packages (CentOS 7, multi-arch)"
 
 on:
   workflow_dispatch:
@@ -115,7 +115,7 @@ jobs:
             -e OUTPUT_DIR="/work/output/apisix/${TARGET_ARCH}" \
             -v "${GITHUB_WORKSPACE}:/work" \
             "${DOCKER_IMAGE}" \
-            bash /work/scripts/apisix/build-centos7-offline.sh
+            bash /work/apisix/build-centos7-offline.sh
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

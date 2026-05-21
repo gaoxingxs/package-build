@@ -1,4 +1,4 @@
-name: Build PostgreSQL with Extensions
+name: "[PostgreSQL] Build with extensions (CentOS 7, glibc 2.17)"
 
 on:
   push:
@@ -30,7 +30,7 @@ jobs:
           # 使用 Docker 在 CentOS 7 环境中编译，产物挂载到宿主机
           docker build --build-arg PG_VERSION=${PG_VERSION} \
             -t pg-build-centos7 \
-            -f Dockerfile.centos7 .
+            postgres/
 
       - name: Extract build artifacts from container
         run: |

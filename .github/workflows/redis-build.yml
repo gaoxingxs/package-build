@@ -1,4 +1,4 @@
-name: Build Redis Static Binaries
+name: "[Redis] Build static binaries (multi-arch)"
 
 on:
   workflow_dispatch:

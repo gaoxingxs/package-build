@@ -1,4 +1,4 @@
-name: Build llama.cpp for CentOS 7
+name: "[llama.cpp] Build static binaries (manylinux2014, AVX-512)"
 
 on:
   workflow_dispatch:
