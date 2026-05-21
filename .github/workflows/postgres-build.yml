@@ -1,74 +1,103 @@
 name: "[PostgreSQL] Build with extensions (CentOS 7, glibc 2.17)"
 
 on:
-  push:
-    branches: [main]
-    tags: ['v*']
-  pull_request:
-    branches: [main]
   workflow_dispatch:
     inputs:
       pg_version:
         description: 'PostgreSQL version'
         required: false
         default: '17.5'
+      target_arch:
+        description: 'Target architecture'
+        required: true
+        default: 'amd64'
+        type: choice
+        options:
+          - amd64
+          - arm64
+          - both
 
 env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   PG_VERSION: ${{ github.event.inputs.pg_version || '17.5' }}
   PG_MAJOR: '17'
 
 jobs:
-  build:
+  # 根据 target_arch 输入展开 build 任务的矩阵
+  prepare:
     runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - id: set-matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${{ github.event.inputs.target_arch }}" in
+            amd64) echo 'matrix={"arch":["amd64"]}'           >> "$GITHUB_OUTPUT" ;;
+            arm64) echo 'matrix={"arch":["arm64"]}'           >> "$GITHUB_OUTPUT" ;;
+            both)  echo 'matrix={"arch":["amd64","arm64"]}'   >> "$GITHUB_OUTPUT" ;;
+            *)     echo "Unsupported target_arch: ${{ github.event.inputs.target_arch }}" >&2; exit 1 ;;
+          esac
+
+  build:
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # arm64 需要 QEMU 模拟（amd64 跳过，省时间）
+      - name: Set up QEMU
+        if: matrix.arch == 'arm64'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Resolve arch suffix
+        id: arch
+        shell: bash
+        run: |
+          if [ "${{ matrix.arch }}" = "amd64" ]; then
+            echo "rpm_arch=x86_64" >> "$GITHUB_OUTPUT"
+          else
+            echo "rpm_arch=aarch64" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build PostgreSQL and extensions in CentOS 7 container
         run: |
-          # 使用 Docker 在 CentOS 7 环境中编译，产物挂载到宿主机
-          docker build --build-arg PG_VERSION=${PG_VERSION} \
-            -t pg-build-centos7 \
+          # 通过 --platform 让 buildkit 在 QEMU/原生架构下分别构建
+          docker build \
+            --platform linux/${{ matrix.arch }} \
+            --build-arg PG_VERSION=${PG_VERSION} \
+            -t pg-build-centos7-${{ matrix.arch }} \
             postgres/
 
       - name: Extract build artifacts from container
         run: |
-          # 从容器中拷贝编译产物
-          docker create --name pg-output pg-build-centos7
-          docker cp pg-output:/build-output/postgresql-${PG_VERSION}-glibc217-x86_64.tar.gz /tmp/
-          docker cp pg-output:/build-output/EXTENSIONS.txt /tmp/
-          docker rm pg-output
+          set -euo pipefail
+          ARCH="${{ steps.arch.outputs.rpm_arch }}"
+          ARTIFACT="postgresql-${PG_VERSION}-glibc217-${ARCH}.tar.gz"
 
-          ls -lh /tmp/postgresql-${PG_VERSION}-glibc217-x86_64.tar.gz
+          docker create --platform linux/${{ matrix.arch }} \
+            --name pg-output-${{ matrix.arch }} \
+            pg-build-centos7-${{ matrix.arch }}
+          docker cp pg-output-${{ matrix.arch }}:/build-output/${ARTIFACT}     /tmp/
+          docker cp pg-output-${{ matrix.arch }}:/build-output/EXTENSIONS.txt  /tmp/EXTENSIONS-${ARCH}.txt
+          docker rm pg-output-${{ matrix.arch }}
+
+          ls -lh /tmp/${ARTIFACT}
           echo ""
-          echo "=== 扩展清单 ==="
-          cat /tmp/EXTENSIONS.txt
+          echo "=== 扩展清单 (${ARCH}) ==="
+          cat /tmp/EXTENSIONS-${ARCH}.txt
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: postgresql-${{ env.PG_VERSION }}-glibc217-x86_64
-          path: /tmp/postgresql-${{ env.PG_VERSION }}-glibc217-x86_64.tar.gz
+          name: postgresql-${{ env.PG_VERSION }}-glibc217-${{ steps.arch.outputs.rpm_arch }}
+          path: |
+            /tmp/postgresql-${{ env.PG_VERSION }}-glibc217-${{ steps.arch.outputs.rpm_arch }}.tar.gz
+            /tmp/EXTENSIONS-${{ steps.arch.outputs.rpm_arch }}.txt
           retention-days: 90
-
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: /tmp/postgresql-${{ env.PG_VERSION }}-glibc217-x86_64.tar.gz
-          body: |
-            PostgreSQL ${{ env.PG_VERSION }} (CentOS 7 构建, glibc 2.17 兼容)
-
-            兼容: CentOS 7+, Ubuntu 18.04+, Debian 10+, Amazon Linux 2, RHEL 7+, SLES 12+ 等几乎所有 Linux 发行版
-
-            包含扩展: pg_cron, pg_duckdb, pgvector, postgres_fdw, pg_stat_statements, pg_trgm, hstore, btree_gin, btree_gist 等
-
-            使用方式:
-            ```bash
-            tar -xzf postgresql-${{ env.PG_VERSION }}-glibc217-x86_64.tar.gz -C / --strip-components=1
-            /usr/local/bin/initdb -D /var/lib/pgsql/data
-            /usr/local/bin/pg_ctl -D /var/lib/pgsql/data start
-            ```
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

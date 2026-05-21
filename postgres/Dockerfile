@@ -138,8 +138,9 @@ RUN set -eux; \
         | sort -u > /build-output/EXTENSIONS.txt; \
     echo "=== 已安装扩展清单 ==="; \
     cat /build-output/EXTENSIONS.txt; \
-    # 重命名 STAGE 的顶层目录后打包
-    tar -czf "/build-output/postgresql-${PG_VERSION}-glibc217-x86_64.tar.gz" \
+    # 重命名 STAGE 的顶层目录后打包（按容器架构生成文件名：x86_64 / aarch64）
+    ARCH="$(uname -m)"; \
+    tar -czf "/build-output/postgresql-${PG_VERSION}-glibc217-${ARCH}.tar.gz" \
         -C /stage "postgresql-${PG_VERSION}"; \
     ls -lh /build-output/
 

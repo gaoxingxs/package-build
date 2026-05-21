@@ -24,6 +24,9 @@ on:
           - aarch64
           - x86_64
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   download:
     name: Download ${{ inputs.system }} ${{ inputs.arch }} RPMs

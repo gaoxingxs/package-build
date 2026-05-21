@@ -1,9 +1,10 @@
 name: "[n8n] Build & push runner image (multi-arch GHCR)"
 
 on:
-  # push:
-  #  branches: [ "main" ]
-  workflow_dispatch: # 支持手动点击按钮触发
+  workflow_dispatch: # 仅支持手动触发
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 # 必须声明权限，否则无法推送镜像到 GitHub Packages (GHCR)
 permissions:
