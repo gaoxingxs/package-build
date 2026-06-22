@@ -3,9 +3,6 @@ name: "[n8n] Build & push runner image (multi-arch GHCR)"
 on:
   workflow_dispatch: # 仅支持手动触发
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 # 必须声明权限，否则无法推送镜像到 GitHub Packages (GHCR)
 permissions:
   packages: write
@@ -16,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # 1. 提取 Dockerfile 中的基础镜像版本号
       # 逻辑：寻找 FROM 行，按冒号切割获取版本（如 1.76.1）

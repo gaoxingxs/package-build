@@ -3,9 +3,6 @@ name: "[Ansible] Download offline RPM bundle (CentOS 7, glibc 2.17)"
 on:
   workflow_dispatch: # 支持手动点击按钮触发
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   build-and-package:
     runs-on: ubuntu-latest
@@ -39,7 +36,7 @@ jobs:
 
       # 第二步：由 Ubuntu 宿主机上传产物 (绕过 Glibc 限制)
       - name: Upload Offline Package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ansible-offline-bundle
           path: ansible-centos7-offline.tar.gz

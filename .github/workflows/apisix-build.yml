@@ -29,9 +29,6 @@ on:
         required: true
         default: "1"
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   prepare:
     runs-on: ubuntu-latest
@@ -67,7 +64,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up QEMU
         if: matrix.arch == 'arm64'
@@ -118,7 +115,7 @@ jobs:
             bash /work/apisix/build-centos7-offline.sh
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: apisix-${{ github.event.inputs.apisix_version }}-el7-${{ matrix.arch }}
           path: output/apisix/${{ matrix.arch }}/

@@ -3,9 +3,6 @@ name: "[llama.cpp] Build static binaries (manylinux2014, AVX-512)"
 on:
   workflow_dispatch:
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -13,7 +10,7 @@ jobs:
     
     steps:
       - name: Checkout Code (Running on Ubuntu)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: ggerganov/llama.cpp
           fetch-depth: 1
@@ -50,7 +47,7 @@ jobs:
 
       - name: Upload Artifact (Running on Ubuntu)
         # 此时在宿主机 Ubuntu 上运行，glibc 没问题
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: llama-cpp-centos7-binary
           path: llama-cpp-centos7-avx512.tar.gz

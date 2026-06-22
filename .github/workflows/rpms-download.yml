@@ -24,9 +24,6 @@ on:
           - aarch64
           - x86_64
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   download:
     name: Download ${{ inputs.system }} ${{ inputs.arch }} RPMs
@@ -104,7 +101,7 @@ jobs:
           tar -czf "rpms-${{ inputs.system }}-${{ inputs.arch }}.tar.gz" rpms
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: rpms-${{ inputs.system }}-${{ inputs.arch }}
           path: rpms-${{ inputs.system }}-${{ inputs.arch }}.tar.gz

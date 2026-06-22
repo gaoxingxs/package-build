@@ -3,9 +3,6 @@ name: "[zstd] Build static binary (multi-arch)"
 on:
   workflow_dispatch:
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -15,7 +12,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: facebook/zstd
 
@@ -52,7 +49,7 @@ jobs:
           mv zstd zstd-${{ matrix.arch }}-static
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: zstd-${{ matrix.arch }}-static
           path: zstd-${{ matrix.arch }}-static
