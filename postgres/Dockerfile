@@ -51,6 +51,8 @@ RUN set -eux; \
         devtoolset-11-gcc \
         devtoolset-11-gcc-c++ \
         devtoolset-11-binutils \
+        glibc-devel \
+        glibc-headers \
         make \
         git \
         wget \
@@ -102,7 +104,7 @@ RUN set -eux; \
         --with-pam \
         --with-ldap \
         --with-python \
-        --with-uuid=e2fs; \
+        --with-uuid=e2fs || { cat config.log; exit 1; }; \
     make -j"$(nproc)" world-bin; \
     # 安装到 STAGE（不污染镜像内 /usr/local），同时也在镜像内安装一份给后续扩展编译使用
     make install-world-bin DESTDIR="${STAGE}"; \
