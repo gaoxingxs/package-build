@@ -1,0 +1,53 @@
+name: "[Nginx] Build offline package (multi-arch)"
+
+on:
+  workflow_dispatch:
+    inputs:
+      nginx_version:
+        description: 'Nginx 版本，留空 = 最新稳定版'
+        required: false
+        default: ''
+      glibc:
+        description: '目标 glibc 版本（决定构建基础镜像）'
+        required: false
+        default: '2.28'
+        type: choice
+        options:
+          - '2.28'
+          - '2.17'
+
+permissions:
+  contents: read
+
+env:
+  # glibc 2.28 = 麒麟V10 / Anolis 8/23；glibc 2.17 = CentOS 7 / Anolis 7
+  BUILD_IMAGE: ${{ fromJSON('{"2.28":"openanolis/anolisos:8","2.17":"centos:7"}')[github.event.inputs.glibc] }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Build nginx in container
+        run: |
+          docker run --rm -v ${{ github.workspace }}:/dist \
+            --platform linux/${{ matrix.arch }} \
+            "${{ env.BUILD_IMAGE }}" \
+            bash /dist/nginx/build-offline.sh "${{ github.event.inputs.nginx_version }}" /dist/output
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v5
+        with:
+          name: nginx-${{ matrix.arch }}-glibc${{ github.event.inputs.glibc }}
+          path: output/
+          if-no-files-found: error
