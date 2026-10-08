@@ -53,7 +53,7 @@ jobs:
       # arm64 需要 QEMU 模拟（amd64 跳过，省时间）
       - name: Set up QEMU
         if: matrix.arch == 'arm64'
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Resolve arch suffix
         id: arch
@@ -93,7 +93,7 @@ jobs:
           cat /tmp/EXTENSIONS-${ARCH}.txt
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: postgresql-${{ env.PG_VERSION }}-glibc217-${{ steps.arch.outputs.rpm_arch }}
           path: |

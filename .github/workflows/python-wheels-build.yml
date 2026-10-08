@@ -30,7 +30,7 @@ jobs:
 
       - name: Set up QEMU
         if: matrix.arch == 'arm64'
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Build/Download wheels in target architecture container
         run: |
@@ -89,7 +89,7 @@ jobs:
             "
 
       - name: Upload Offline Wheels as Artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: offline-wheels-py${{ github.event.inputs.python_version }}-${{ matrix.arch }}
           path: ./offline_packages/*.whl

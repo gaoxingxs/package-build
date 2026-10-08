@@ -68,7 +68,7 @@ jobs:
 
       - name: Set up QEMU
         if: matrix.arch == 'arm64'
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Build offline package
         shell: bash
@@ -115,7 +115,7 @@ jobs:
             bash /work/apisix/build-centos7-offline.sh
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: apisix-${{ github.event.inputs.apisix_version }}-el7-${{ matrix.arch }}
           path: output/apisix/${{ matrix.arch }}/
