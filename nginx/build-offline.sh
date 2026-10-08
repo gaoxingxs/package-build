@@ -59,7 +59,7 @@ make install
 
 # ---------- 4. 打包运行时动态库（自包含，rpath 指向 $PREFIX/lib）----------
 mkdir -p "$PREFIX/lib"
-ldd "$PREFIX/sbin/nginx" | awk '{print $3}' | grep -E 'lib(ssl|crypto|pcre|z)\.' | sort -u | while read -r so; do
+ldd "$PREFIX/sbin/nginx" | awk '{print $3}' | grep -E '/lib(ssl|crypto|pcre|z)[^/]*\.so' | sort -u | while read -r so; do
   cp -L "$so" "$PREFIX/lib/"
 done
 strip "$PREFIX/sbin/nginx"
