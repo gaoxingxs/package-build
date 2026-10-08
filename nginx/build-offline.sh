@@ -57,6 +57,10 @@ cd "nginx-${NGINX_VERSION}"
 make -j"$(nproc)"
 make install
 
+# ---------- 3.5 按部署约定修改默认配置 ----------
+# 全局配置在安装目录 conf/nginx.conf；业务站点配置由服务器本地 /etc/nginx/conf.d 导入；隐藏版本号
+sed -i 's|^http {|http {\n    # 隐藏 nginx 版本号\n    server_tokens off;\n\n    # 业务站点配置目录（服务器本地维护）\n    include /etc/nginx/conf.d/*.conf;|' "$PREFIX/conf/nginx.conf"
+
 # ---------- 4. 打包运行时动态库（自包含，rpath 指向 $PREFIX/lib）----------
 mkdir -p "$PREFIX/lib"
 ldd "$PREFIX/sbin/nginx" | awk '{print $3}' | grep -E '/lib(ssl|crypto|pcre|z)[^/]*\.so' | sort -u | while read -r so; do
@@ -67,7 +71,8 @@ strip "$PREFIX/sbin/nginx"
 # ---------- 5. 生成 systemd 服务与安装脚本 ----------
 PKG_NAME="nginx-${NGINX_VERSION}-linux-${ARCH}-glibc${GLIBC_VER}"
 STAGE="/tmp/$PKG_NAME"
-cp -a "$PREFIX" "$STAGE"
+mkdir -p "$STAGE"
+cp -a "$PREFIX" "$STAGE/nginx"
 
 cat > "$STAGE/nginx.service" <<'EOF'
 [Unit]
@@ -104,6 +109,7 @@ if [ -d "$PREFIX" ] && [ "${FORCE:-0}" != "1" ]; then
 fi
 
 mkdir -p "$PREFIX"
+mkdir -p /etc/nginx/conf.d
 cp -a nginx/. "$PREFIX/"
 cp nginx.service /etc/systemd/system/nginx.service
 systemctl daemon-reload
