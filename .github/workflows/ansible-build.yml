@@ -72,12 +72,12 @@ jobs:
         run: |
           set -euo pipefail
           # 在 runner 上交叉解析依赖：全部限定 manylinux_2_17 wheel，
-          # 纯 Python 包（ansible-core/jinja2 等）任意架构通用
+          # 纯 Python 包（ansible-core/jinja2/paramiko 等）任意架构通用
           python3 -m pip download -d wheels \
             --platform manylinux2014_${TRIPLE} \
             --python-version "${PY_VER}" \
             --only-binary=:all: \
-            "ansible-core==${ANSIBLE_VER}"
+            "ansible-core==${ANSIBLE_VER}" paramiko
 
       - name: Assemble offline package
         run: |
@@ -93,11 +93,11 @@ jobs:
           if [ "${{ matrix.arch }}" = "arm64" ]; then
             docker run --rm --platform linux/arm64 -v "$PWD:/work" -e LANG=C.UTF-8 \
               openanolis/anolisos:8 bash -c \
-              "cd /work && ansible/python/bin/${PY_BIN} -m pip install --no-index --find-links /work/wheels --target /work/ansible/lib 'ansible-core==${ANSIBLE_VER}'"
+              "cd /work && ansible/python/bin/${PY_BIN} -m pip install --no-index --find-links /work/wheels --target /work/ansible/lib 'ansible-core==${ANSIBLE_VER}' paramiko"
           else
             ansible/python/bin/${PY_BIN} -m pip install --no-index \
               --find-links "$PWD/wheels" --target ansible/lib \
-              "ansible-core==${ANSIBLE_VER}"
+              "ansible-core==${ANSIBLE_VER}" paramiko
           fi
 
           # 生成可移植启动器，替代 pip 写死的绝对路径 shebang
@@ -160,7 +160,8 @@ jobs:
                 else
                   localedef -c -f UTF-8 -i en_US en_US.UTF-8 \
                     && LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 /ansible/bin/ansible-playbook --version
-                fi' \
+                fi
+                PYTHONPATH=/ansible/lib /ansible/python/bin/python3.11 -c "import paramiko; print(\"paramiko\", paramiko.__version__)"' \
               || FAIL=1
           done
           exit $FAIL
