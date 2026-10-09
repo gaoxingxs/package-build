@@ -148,15 +148,19 @@ jobs:
             amd64) PLAT=linux/amd64 ;;
             arm64) PLAT=linux/arm64 ;;
           esac
-          # docker 精简镜像裁掉了 locale-archive（真实 EL7/EL8 系统自带 en_US.UTF-8），
-          # 故在容器内用 localedef 现场生成后再跑
+          # docker 精简镜像可能裁掉 locale-archive 或 charmaps（真实 EL 系统自带 UTF-8 locale）。
+          # 自适应：容器里有 C.utf8 就直接用；没有则用 localedef 现场生成 en_US.UTF-8
           FAIL=0
           for IMAGE in centos:7 openanolis/anolisos:8; do
             echo "== $IMAGE =="
             docker run --rm --platform $PLAT -v "$PWD/ansible:/ansible:ro" \
-              "$IMAGE" bash -c \
-              "localedef -c -f UTF-8 -i en_US en_US.UTF-8 \
-                 && LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 /ansible/bin/ansible-playbook --version" \
+              "$IMAGE" bash -c '
+                if locale -a 2>/dev/null | grep -qi "^C\.utf8$"; then
+                  LANG=C.utf8 LC_ALL=C.utf8 /ansible/bin/ansible-playbook --version
+                else
+                  localedef -c -f UTF-8 -i en_US en_US.UTF-8 \
+                    && LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 /ansible/bin/ansible-playbook --version
+                fi' \
               || FAIL=1
           done
           exit $FAIL
