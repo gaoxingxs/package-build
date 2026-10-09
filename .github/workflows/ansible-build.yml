@@ -148,14 +148,18 @@ jobs:
             amd64) PLAT=linux/amd64 ;;
             arm64) PLAT=linux/arm64 ;;
           esac
-          echo "== CentOS 7 =="
-          docker run --rm --platform $PLAT -e LANG=C.utf8 -e LC_ALL=C.utf8 \
-            -v "$PWD/ansible:/ansible:ro" \
-            centos:7 /ansible/bin/ansible-playbook --version
-          echo "== Anolis 8 =="
-          docker run --rm --platform $PLAT -e LANG=C.utf8 -e LC_ALL=C.utf8 \
-            -v "$PWD/ansible:/ansible:ro" \
-            openanolis/anolisos:8 /ansible/bin/ansible-playbook --version
+          # docker 精简镜像裁掉了 locale-archive（真实 EL7/EL8 系统自带 en_US.UTF-8），
+          # 故在容器内用 localedef 现场生成后再跑
+          FAIL=0
+          for IMAGE in centos:7 openanolis/anolisos:8; do
+            echo "== $IMAGE =="
+            docker run --rm --platform $PLAT -v "$PWD/ansible:/ansible:ro" \
+              "$IMAGE" bash -c \
+              "localedef -c -f UTF-8 -i en_US en_US.UTF-8 \
+                 && LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 /ansible/bin/ansible-playbook --version" \
+              || FAIL=1
+          done
+          exit $FAIL
 
       - name: Package
         run: |
