@@ -119,6 +119,10 @@ mkdir -p /etc/nginx/conf.d
 log "校验生成的 nginx.conf"
 "$PREFIX/sbin/nginx" -t
 
+# nginx -t 也会建 pid 文件并打开 access/error log（见 ngx_cycle.c 的 ngx_test_config 分支），
+# 清掉这些构建期残留，离线包里只留空 logs/ 目录
+rm -f "$PREFIX/logs/nginx.pid" "$PREFIX/logs/access.log" "$PREFIX/logs/error.log"
+
 # ---------- 4. 打包运行时动态库（自包含，rpath 指向 $PREFIX/lib）----------
 mkdir -p "$PREFIX/lib"
 ldd "$PREFIX/sbin/nginx" | awk '{print $3}' | grep -E '/lib(ssl|crypto|pcre|z)[^/]*\.so' | sort -u | while read -r so; do
