@@ -62,7 +62,7 @@ jobs:
           URL=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
             https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest \
             | jq -r '.assets[].browser_download_url' \
-            | grep -E "cpython-${PY_VER}\.[0-9]+\+[^-]+-${TRIPLE}-unknown-linux-gnu-install_only\.tar\.gz" \
+            | grep -E "cpython-${PY_VER}\.[0-9]+(\+|%2B)[^-]+-${TRIPLE}-unknown-linux-gnu-install_only\.tar\.gz" \
             | head -1)
           [ -n "$URL" ] || { echo "未找到 cpython ${PY_VER} ${TRIPLE} install_only 资产"; exit 1; }
           echo "Python: $URL"
