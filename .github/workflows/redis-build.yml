@@ -7,7 +7,6 @@ on:
         description: 'Redis version to build'
         required: true
         default: '7.2.4'
-env:
 jobs:
   build:
     runs-on: ubuntu-latest
