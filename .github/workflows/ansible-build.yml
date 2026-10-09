@@ -1,0 +1,159 @@
+name: "[Ansible] Build offline control-node package (multi-arch)"
+
+on:
+  workflow_dispatch:
+    inputs:
+      ansible_version:
+        description: 'ansible-core 版本；留空 = 最新 2.16.x（2.16 是最后支持目标机 python2.7/3.6 的版本线，适配麒麟V10/Anolis8 自带 python3）'
+        required: false
+        default: ''
+      python_version:
+        description: '独立 Python 版本（控制端用），3.11 兼容 ansible-core 2.15~2.18 控制端要求'
+        required: false
+        default: '3.11'
+
+permissions:
+  contents: read
+
+env:
+  # 单一构建同时覆盖 glibc >= 2.17（CentOS 7+ / 麒麟V10 / Anolis 8/23）：
+  # python-build-standalone 与全部依赖 wheel 均按 manylinux_2_17 基线获取，向下兼容 2.28
+  PY_VER: ${{ github.event.inputs.python_version }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up QEMU
+        if: matrix.arch == 'arm64'
+        uses: docker/setup-qemu-action@v4
+
+      - name: Resolve versions & fetch standalone Python
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          case "${{ matrix.arch }}" in
+            amd64) TRIPLE=x86_64 ;;
+            arm64) TRIPLE=aarch64 ;;
+          esac
+          echo "TRIPLE=$TRIPLE" >> "$GITHUB_ENV"
+
+          # ansible-core 版本：留空则解析最新 2.16.x
+          ANSIBLE_VER="${{ github.event.inputs.ansible_version }}"
+          if [ -z "$ANSIBLE_VER" ]; then
+            ANSIBLE_VER=$(curl -fsSL https://pypi.org/pypi/ansible-core/json \
+              | jq -r '.releases | keys[]' \
+              | grep -E '^2\.16\.[0-9]+$' | sort -V | tail -1)
+          fi
+          [ -n "$ANSIBLE_VER" ] || { echo "无法确定 ansible-core 版本"; exit 1; }
+          echo "ANSIBLE_VER=$ANSIBLE_VER" >> "$GITHUB_ENV"
+          echo "ansible-core: $ANSIBLE_VER"
+
+          # python-build-standalone 预编译 Python（glibc 2.17 基线，双架构）
+          URL=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+            https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest \
+            | jq -r '.assets[].browser_download_url' \
+            | grep -E "cpython-${PY_VER}\.[0-9]+\+[^-]+-${TRIPLE}-unknown-linux-gnu-install_only\.tar\.gz" \
+            | head -1)
+          [ -n "$URL" ] || { echo "未找到 cpython ${PY_VER} ${TRIPLE} install_only 资产"; exit 1; }
+          echo "Python: $URL"
+          curl -fsSL "$URL" -o python.tar.gz
+
+      - name: Download wheels for target arch (manylinux_2_17)
+        run: |
+          set -euo pipefail
+          # 在 runner 上交叉解析依赖：全部限定 manylinux_2_17 wheel，
+          # 纯 Python 包（ansible-core/jinja2 等）任意架构通用
+          python3 -m pip download -d wheels \
+            --platform manylinux2014_${TRIPLE} \
+            --python-version "${PY_VER}" \
+            --only-binary=:all: \
+            "ansible-core==${ANSIBLE_VER}"
+
+      - name: Assemble offline package
+        run: |
+          set -euo pipefail
+          PY_BIN=python${PY_VER}
+          mkdir -p stage ansible
+          tar xzf python.tar.gz -C stage
+          mv stage/python ansible/python
+
+          # 用目标架构的 Python 将 wheel 离线安装进包内（arm64 经 QEMU 执行）
+          ansible/python/bin/${PY_BIN} -m pip install --no-index \
+            --find-links "$PWD/wheels" --target ansible/lib \
+            "ansible-core==${ANSIBLE_VER}"
+
+          # 生成可移植启动器，替代 pip 写死的绝对路径 shebang
+          mkdir -p ansible/bin
+          for f in ansible/lib/bin/*; do
+            tool=$(basename "$f")
+            printf '%s\n' \
+              '#!/bin/sh' \
+              'root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)' \
+              'export PYTHONPATH="$root/lib${PYTHONPATH:+:$PYTHONPATH}"' \
+              "exec \"\$root/python/bin/${PY_BIN}\" \"\$root/lib/bin/${tool}\" \"\$@\"" \
+              > ansible/bin/"$tool"
+            chmod +x ansible/bin/"$tool"
+          done
+
+          cat > ansible/README.md <<'EOF'
+          # 离线 Ansible 控制机包
+
+          自包含独立 Python + ansible-core，控制机无需安装任何依赖、无需联网。
+
+          ## 适用环境
+          - 架构：x86_64 / aarch64（按 tarball 文件名选择）
+          - 系统：glibc >= 2.17 —— CentOS 7+ / 麒麟 V10 / Anolis OS 8/23 均可
+          - 解压任意目录即用，不需要 root
+
+          ## 使用
+          tar xzf ansible-x86_64.tar.gz
+          export PATH=$PWD/ansible/bin:$PATH
+          ansible-playbook -i inventory site.yml
+
+          ## 目标机要求
+          仅需 ssh 可达 + python。ansible-core 2.16.x 支持目标机 python 2.7 / 3.6+，
+          麒麟V10 / Anolis 8 自带 python3 可直接被管理；如需 2.17+ 请目标机 python >= 3.7。
+
+          ## 扩展
+          - 新增 Python 库：在同架构联网机上执行
+            ./ansible/python/bin/python3.11 -m pip install --target ansible/lib <pkg>
+          - 新增 collection：联网机上 ansible-galaxy collection install 后，
+            将 collections 目录拷到控制机，并用 ANSIBLE_COLLECTIONS_PATH 指向它
+          EOF
+
+      - name: Smoke test on CentOS 7 (glibc 2.17) & Anolis 8 (glibc 2.28)
+        run: |
+          set -euo pipefail
+          case "${{ matrix.arch }}" in
+            amd64) PLAT=linux/amd64 ;;
+            arm64) PLAT=linux/arm64 ;;
+          esac
+          echo "== CentOS 7 =="
+          docker run --rm --platform $PLAT -v "$PWD/ansible:/ansible:ro" \
+            centos:7 /ansible/bin/ansible-playbook --version
+          echo "== Anolis 8 =="
+          docker run --rm --platform $PLAT -v "$PWD/ansible:/ansible:ro" \
+            openanolis/anolisos:8 /ansible/bin/ansible-playbook --version
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          tar --owner=0 --group=0 -czf output/ansible-${TRIPLE}.tar.gz ansible
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: ansible-${{ env.TRIPLE }}
+          path: output/
+          if-no-files-found: error
