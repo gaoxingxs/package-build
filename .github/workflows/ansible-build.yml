@@ -87,10 +87,18 @@ jobs:
           tar xzf python.tar.gz -C stage
           mv stage/python ansible/python
 
-          # 用目标架构的 Python 将 wheel 离线安装进包内（arm64 经 QEMU 执行）
-          ansible/python/bin/${PY_BIN} -m pip install --no-index \
-            --find-links "$PWD/wheels" --target ansible/lib \
-            "ansible-core==${ANSIBLE_VER}"
+          # 用目标架构的 Python 将 wheel 离线安装进包内
+          # arm64 不能直接在宿主执行 aarch64 二进制（binfmt qemu-user 找不到 guest loader），
+          # 需在 arm64 容器内运行；amd64 原生执行
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            docker run --rm --platform linux/arm64 -v "$PWD:/work" -e LANG=C.UTF-8 \
+              openanolis/anolisos:8 bash -c \
+              "cd /work && ansible/python/bin/${PY_BIN} -m pip install --no-index --find-links /work/wheels --target /work/ansible/lib 'ansible-core==${ANSIBLE_VER}'"
+          else
+            ansible/python/bin/${PY_BIN} -m pip install --no-index \
+              --find-links "$PWD/wheels" --target ansible/lib \
+              "ansible-core==${ANSIBLE_VER}"
+          fi
 
           # 生成可移植启动器，替代 pip 写死的绝对路径 shebang
           mkdir -p ansible/bin
@@ -119,6 +127,8 @@ jobs:
           tar xzf ansible-x86_64.tar.gz
           export PATH=$PWD/ansible/bin:$PATH
           ansible-playbook -i inventory site.yml
+          # 控制机需 UTF-8 locale，若报 "requires the locale encoding to be UTF-8"：
+          export LANG=C.UTF-8
 
           ## 目标机要求
           仅需 ssh 可达 + python。ansible-core 2.16.x 支持目标机 python 2.7 / 3.6+，
@@ -139,10 +149,12 @@ jobs:
             arm64) PLAT=linux/arm64 ;;
           esac
           echo "== CentOS 7 =="
-          docker run --rm --platform $PLAT -v "$PWD/ansible:/ansible:ro" \
+          docker run --rm --platform $PLAT -e LANG=C.UTF-8 -e LC_ALL=C.UTF-8 \
+            -v "$PWD/ansible:/ansible:ro" \
             centos:7 /ansible/bin/ansible-playbook --version
           echo "== Anolis 8 =="
-          docker run --rm --platform $PLAT -v "$PWD/ansible:/ansible:ro" \
+          docker run --rm --platform $PLAT -e LANG=C.UTF-8 -e LC_ALL=C.UTF-8 \
+            -v "$PWD/ansible:/ansible:ro" \
             openanolis/anolisos:8 /ansible/bin/ansible-playbook --version
 
       - name: Package
