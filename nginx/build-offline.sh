@@ -57,9 +57,67 @@ cd "nginx-${NGINX_VERSION}"
 make -j"$(nproc)"
 make install
 
-# ---------- 3.5 按部署约定修改默认配置 ----------
+# ---------- 3.5 生成默认配置（整文件写出，不再 sed 改上游模板）----------
 # 全局配置在安装目录 conf/nginx.conf；业务站点配置由服务器本地 /etc/nginx/conf.d 导入；隐藏版本号
-sed -i 's|^http {|http {\n    # 隐藏 nginx 版本号\n    server_tokens off;\n\n    # 业务站点配置目录（服务器本地维护）\n    include /etc/nginx/conf.d/*.conf;|' "$PREFIX/conf/nginx.conf"
+# 关键: log_format main 必须定义在 include /etc/nginx/conf.d/*.conf 之前，
+#       否则 conf.d 里的站点写 access_log ... main 会在 nginx -t 时报 unknown log format
+cat > "$PREFIX/conf/nginx.conf" <<'NGINX_CONF'
+# nginx 全局配置（由 build-offline.sh 生成）
+# 业务站点配置请放到 /etc/nginx/conf.d/*.conf，不要直接改本文件
+worker_processes  auto;
+
+error_log  logs/error.log warn;
+pid        logs/nginx.pid;
+
+events {
+    worker_connections  1024;
+}
+
+http {
+    include       mime.types;
+    default_type  application/octet-stream;
+
+    # 隐藏 nginx 版本号
+    server_tokens off;
+
+    # 日志格式，供 /etc/nginx/conf.d 下的站点引用（必须在下面的 include 之前定义）
+    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" "$http_x_forwarded_for"';
+
+    access_log  logs/access.log  main;
+
+    sendfile        on;
+    tcp_nopush      on;
+    keepalive_timeout  65;
+
+    # 包内默认站点（欢迎页）。nginx 规则: 同端口第一个 server 块即默认 server，
+    # 因此它优先于下面 include 进来的站点；conf.d 里的站点若要接管 80 端口，
+    # 在自己的 listen 上加 default_server 即可（例如 listen 80 default_server;）。
+    server {
+        listen       80;
+        server_name  localhost;
+
+        location / {
+            root   html;
+            index  index.html index.htm;
+        }
+
+        error_page   500 502 503 504  /50x.html;
+        location = /50x.html {
+            root   html;
+        }
+    }
+
+    # 业务站点配置目录（服务器本地维护）
+    include /etc/nginx/conf.d/*.conf;
+}
+NGINX_CONF
+
+# 构建期自检: 配置解析不过就不许进包（容器内 /etc/nginx/conf.d 不存在会让 glob include 报错，先建空目录）
+mkdir -p /etc/nginx/conf.d
+log "校验生成的 nginx.conf"
+"$PREFIX/sbin/nginx" -t
 
 # ---------- 4. 打包运行时动态库（自包含，rpath 指向 $PREFIX/lib）----------
 mkdir -p "$PREFIX/lib"
@@ -111,13 +169,21 @@ fi
 mkdir -p "$PREFIX"
 mkdir -p /etc/nginx/conf.d
 cp -a nginx/. "$PREFIX/"
+
+# 安装后自检: 配置解析不过就不要报告"安装完成"，避免"装好了却起不来"的假象
+if ! "$PREFIX/sbin/nginx" -t; then
+  echo "错误: nginx -t 校验失败，请检查 $PREFIX/conf/nginx.conf 与 /etc/nginx/conf.d/*.conf" >&2
+  exit 1
+fi
+
 cp nginx.service /etc/systemd/system/nginx.service
 systemctl daemon-reload
 systemctl enable nginx >/dev/null 2>&1
 
-echo "安装完成: $PREFIX"
+echo "安装完成: $PREFIX (nginx -t 已通过)"
 echo "启动: systemctl start nginx"
-echo "默认站点: http://127.0.0.1"
+echo "业务站点: 放到 /etc/nginx/conf.d/*.conf（接管 80 端口时写 listen 80 default_server;）"
+echo "日志: $PREFIX/logs/{access,error}.log，格式为 log_format main"
 EOF
 chmod +x "$STAGE/install.sh"
 
