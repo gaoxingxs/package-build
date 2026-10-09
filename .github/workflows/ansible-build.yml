@@ -149,11 +149,11 @@ jobs:
             arm64) PLAT=linux/arm64 ;;
           esac
           echo "== CentOS 7 =="
-          docker run --rm --platform $PLAT -e LANG=C.UTF-8 -e LC_ALL=C.UTF-8 \
+          docker run --rm --platform $PLAT -e LANG=C.utf8 -e LC_ALL=C.utf8 \
             -v "$PWD/ansible:/ansible:ro" \
             centos:7 /ansible/bin/ansible-playbook --version
           echo "== Anolis 8 =="
-          docker run --rm --platform $PLAT -e LANG=C.UTF-8 -e LC_ALL=C.UTF-8 \
+          docker run --rm --platform $PLAT -e LANG=C.utf8 -e LC_ALL=C.utf8 \
             -v "$PWD/ansible:/ansible:ro" \
             openanolis/anolisos:8 /ansible/bin/ansible-playbook --version
 
